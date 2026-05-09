@@ -1,5 +1,5 @@
-streamlit==1.35.0
-pyomo==6.7.1
-plotly==5.22.0
-pandas==2.2.2
-numpy==1.26.4
+streamlit
+pyomo
+plotly
+pandas
+numpy
