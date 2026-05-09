@@ -336,7 +336,10 @@ with tab5:
         st.success("✅ 모든 제약조건을 충분히 만족하는 우수한 계획입니다!")
     else:
         for level, msg in alerts:
-            st.error(msg) if level == "danger" else st.warning(msg)
+            if level == "danger":
+                st.error(msg)
+            else:
+                st.warning(msg)
 
     st.markdown("---")
     util_data = []
