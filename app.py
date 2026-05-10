@@ -81,19 +81,27 @@ with st.sidebar:
     st.divider()
 
     st.markdown("### 📊 월별 수요 예측 (개)")
-    scenario = st.selectbox("시나리오 프리셋", ["직접 입력", "기본 시나리오", "피크 수요", "변동 수요"])
     presets = {
         "기본 시나리오": [1600, 3000, 3200, 3800, 2200, 2200],
         "피크 수요":     [1600, 5000, 3200, 5800, 2200, 2200],
         "변동 수요":     [1600, 5000, 3200, 5800, 2200, 6500],
+        "직접 입력":     None,
     }
-    defs = presets.get(scenario, [1600, 3000, 3200, 3800, 2200, 2200])
+    scenario = st.selectbox("시나리오 프리셋", list(presets.keys()))
     months = ["1월","2월","3월","4월","5월","6월"]
+
+    if scenario != "직접 입력":
+        for i, v in enumerate(presets[scenario]):
+            st.session_state[f"d{i}"] = v
+
     demand = []
     c1, c2 = st.columns(2)
     for i, mo in enumerate(months):
         with (c1 if i % 2 == 0 else c2):
-            demand.append(st.number_input(mo, value=defs[i], min_value=0, step=100, key=f"d{i}"))
+            default = presets.get(scenario) or [1600,3000,3200,3800,2200,2200]
+            if f"d{i}" not in st.session_state:
+                st.session_state[f"d{i}"] = default[i]
+            demand.append(st.number_input(mo, min_value=0, step=100, key=f"d{i}"))
 
     st.divider()
     st.markdown("### 💰 비용 파라미터")
@@ -183,18 +191,137 @@ with tab1:
 
     col3, col4 = st.columns(2)
     with col3:
+        safe_stock = I0 * 0.2
+        inv_colors = []
+        for v, s in zip(df["재고(개)"].tolist(), df["부재고(개)"].tolist()):
+            if s > 0:
+                inv_colors.append("#ef4444")
+            elif v < safe_stock:
+                inv_colors.append("#f59e0b")
+            else:
+                inv_colors.append("#0ea5e9")
+
         fig3 = go.Figure()
-        fig3.add_trace(go.Bar(name="재고",   x=months, y=df["재고(개)"].tolist(),   marker_color="#0ea5e9", opacity=0.8))
-        fig3.add_trace(go.Bar(name="부재고", x=months, y=df["부재고(개)"].tolist(), marker_color="#ef4444", opacity=0.8))
-        fig3.update_layout(title="재고 / 부재고", barmode="group", height=300,
+        fig3.add_trace(go.Bar(name="재고", x=months, y=df["재고(개)"].tolist(),
+                              marker_color=inv_colors, opacity=0.85))
+        fig3.add_trace(go.Bar(name="부재고", x=months, y=df["부재고(개)"].tolist(),
+                              marker_color="#ef4444", opacity=0.5))
+        fig3.add_hline(y=safe_stock, line_dash="dash", line_color="#f59e0b",
+                       annotation_text=f"안전재고 기준 ({int(safe_stock)}개)")
+        fig3.add_hline(y=If_min, line_dash="dot", line_color="#22c55e",
+                       annotation_text=f"최종재고 목표 ({int(If_min)}개)")
+        fig3.update_layout(title="재고 / 부재고 추이", barmode="group", height=300,
                            plot_bgcolor="white", legend=dict(orientation="h", y=-0.25))
         st.plotly_chart(fig3, use_container_width=True)
+
+        # 재고 상태 요약
+        inv_status = []
+        for i, row in df.iterrows():
+            if row["부재고(개)"] > 0:
+                inv_status.append(f"🚨 {months[i]}: 부재고 {row['부재고(개)']:.0f}개 발생")
+            elif row["재고(개)"] < safe_stock:
+                inv_status.append(f"🟡 {months[i]}: 재고 {row['재고(개)']:.0f}개 — 안전재고 미달")
+            elif row["재고(개)"] > I0:
+                inv_status.append(f"🔵 {months[i]}: 재고 {row['재고(개)']:.0f}개 — 과잉재고")
+            else:
+                inv_status.append(f"🟢 {months[i]}: 재고 {row['재고(개)']:.0f}개 — 양호")
+        for s in inv_status:
+            st.caption(s)
 
     with col4:
         cost_vals = [sum(cb[f"{t+1}월"][k] for t in range(6)) for k in cost_keys]
         fig4 = go.Figure(go.Pie(labels=cost_keys, values=cost_vals, hole=0.5, marker_colors=COLORS))
         fig4.update_layout(title="비용 구성", height=300, legend=dict(orientation="h", y=-0.3, font_size=11))
         st.plotly_chart(fig4, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 📈 수요 충족률 분석")
+
+    # 1. 수요 대비 생산 충족률
+    fulfill_data = []
+    for i, row in df.iterrows():
+        total_supply = row["생산(개)"] + row["하청(개)"]
+        d = demand[i]
+        rate = min(total_supply / d * 100, 100) if d > 0 else 100
+        fulfill_data.append(round(rate, 1))
+
+    fig_f = go.Figure()
+    clr_f = ["#ef4444" if r < 90 else "#f59e0b" if r < 100 else "#22c55e" for r in fulfill_data]
+    fig_f.add_trace(go.Bar(x=months, y=fulfill_data, marker_color=clr_f,
+                           text=[f"{r:.0f}%" for r in fulfill_data], textposition="outside"))
+    fig_f.add_hline(y=100, line_dash="dash", line_color="#22c55e", annotation_text="100% 충족")
+    fig_f.add_hline(y=90,  line_dash="dash", line_color="#ef4444", annotation_text="90% 기준")
+    fig_f.update_layout(title="월별 수요 충족률 (%)", height=280,
+                        plot_bgcolor="white", yaxis_range=[0, 115], showlegend=False)
+    st.plotly_chart(fig_f, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 💹 손익 분석")
+
+    # 2. 손익 분석 (판매단가 40천원/개)
+    sell_price = 40000  # 원/개
+    col_a, col_b, col_c = st.columns(3)
+
+    total_revenue = sum(demand) * sell_price
+    total_cost_val = result["total_cost"]
+    profit = total_revenue - total_cost_val
+
+    col_a.metric("💰 총 매출",   f"{total_revenue/1e6:.1f}백만원", f"수요 {sum(demand):,}개 × 40천원")
+    col_b.metric("💸 총 비용",   f"{total_cost_val/1e6:.1f}백만원")
+    col_c.metric("📈 예상 이익", f"{profit/1e6:.1f}백만원",
+                 "흑자 ✅" if profit > 0 else "적자 ⚠️")
+
+    # 월별 손익
+    monthly_profit = []
+    for i, row in df.iterrows():
+        rev = demand[i] * sell_price
+        cost_m = sum(cb[f"{i+1}월"].values())
+        monthly_profit.append((rev - cost_m) / 1000)
+
+    fig_p = go.Figure()
+    clr_p = ["#22c55e" if v >= 0 else "#ef4444" for v in monthly_profit]
+    fig_p.add_trace(go.Bar(x=months, y=monthly_profit, marker_color=clr_p,
+                           text=[f"{v:,.0f}천원" for v in monthly_profit], textposition="outside"))
+    fig_p.add_hline(y=0, line_color="#6b7280", line_width=1)
+    fig_p.update_layout(title="월별 손익 (천원)", height=280,
+                        plot_bgcolor="white", showlegend=False)
+    st.plotly_chart(fig_p, use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("### 💬 월별 계획 요약 코멘트")
+
+    # 3. 월별 한 줄 코멘트
+    reg_prod_pw = hours * days / std_time
+    for i, row in df.iterrows():
+        mo = months[i]
+        issues = []
+        mp = reg_prod_pw * row["인원(명)"] + row["초과시간(h)"] / std_time
+        util = row["생산(개)"] / mp * 100 if mp > 0 else 0
+        total_supply = row["생산(개)"] + row["하청(개)"]
+        fulfill = min(total_supply / demand[i] * 100, 100) if demand[i] > 0 else 100
+
+        if row["부재고(개)"] > 0:
+            issues.append(f"부재고 {row['부재고(개)']:.0f}개 발생 → 하청 확대 또는 사전 재고 확보 필요")
+        if row["재고(개)"] < I0 * 0.2:
+            issues.append(f"안전재고 미달 ({row['재고(개)']:.0f}개)")
+        if row["재고(개)"] > I0 * 1.5:
+            issues.append(f"과잉재고 ({row['재고(개)']:.0f}개) → 보관비 부담")
+        if row["고용(명)"] > 0:
+            issues.append(f"{row['고용(명)']:.0f}명 신규 고용 → 교육훈련 필요")
+        if row["해고(명)"] > 0:
+            issues.append(f"{row['해고(명)']:.0f}명 해고 → 해고비용 발생")
+        if util > 95:
+            issues.append(f"가동률 {util:.0f}% — 설비 과부하 위험")
+
+        if not issues:
+            comment = "✅ 생산, 재고, 인력 모두 안정적인 달입니다."
+            st.success(f"**{mo}**: {comment}")
+        else:
+            comment = " / ".join(issues)
+            if row["부재고(개)"] > 0:
+                st.error(f"**{mo}**: {comment}")
+            else:
+                st.warning(f"**{mo}**: {comment}")
 
 with tab2:
     st.markdown("### 📋 월별 결정변수 결과표")
