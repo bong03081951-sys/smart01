@@ -101,6 +101,7 @@ with st.sidebar:
     back_cost = st.number_input("부재고비용 (천원/개/월)", value=5,    step=1)   * 1000
     mat_cost  = st.number_input("재료비 (천원/개)",        value=10,   step=1)   * 1000
     sub_cost  = st.number_input("하청비용 (천원/개)",      value=30,   step=5)   * 1000
+    sell_price_k = st.number_input("판매단가 (천원/개)",   value=40,   step=5)   * 1000
 
     st.divider()
     st.markdown("### ⚙️ 생산 파라미터")
@@ -234,8 +235,8 @@ with tab1:
     st.markdown("---")
     st.markdown("### 💹 손익 분석")
 
-    # 2. 손익 분석 (판매단가 40천원/개)
-    sell_price = 40000  # 원/개
+    # 2. 손익 분석
+    sell_price = sell_price_k
     col_a, col_b, col_c = st.columns(3)
 
     total_revenue = sum(demand) * sell_price
