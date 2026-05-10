@@ -123,8 +123,17 @@ st.title("📊 총괄생산계획 최적화 대시보드")
 st.caption("원예장비 제조업체 · Pyomo GLPK 솔버 · 6개월 계획")
 
 if not run_btn:
-    st.info("👈 왼쪽에서 파라미터를 설정하고 **최적화 실행** 버튼을 누르세요.")
-    st.stop()
+    if "result" not in st.session_state:
+        st.info("👈 왼쪽에서 파라미터를 설정하고 **최적화 실행** 버튼을 누르세요.")
+        st.stop()
+    else:
+        result    = st.session_state["result"]
+        result_lp = st.session_state["result_lp"]
+        result_ip = st.session_state["result_ip"]
+        demand    = st.session_state["demand"]
+        params    = st.session_state["params"]
+        df = pd.DataFrame(result["monthly"])
+        cb = result["cost_breakdown"]
 
 params = dict(reg_wage=reg_wage, ot_wage=ot_wage, hire_cost=hire_cost, fire_cost=fire_cost,
               inv_cost=inv_cost, back_cost=back_cost, mat_cost=mat_cost, sub_cost=sub_cost,
@@ -140,6 +149,13 @@ with st.spinner("Pyomo + GLPK로 최적화 계산 중..."):
 if result is None:
     st.error("최적해를 찾을 수 없습니다. 파라미터를 확인해주세요.")
     st.stop()
+
+# session_state에 저장
+st.session_state["result"]    = result
+st.session_state["result_lp"] = result_lp
+st.session_state["result_ip"] = result_ip
+st.session_state["demand"]    = demand
+st.session_state["params"]    = params
 
 df = pd.DataFrame(result["monthly"])
 cb = result["cost_breakdown"]
