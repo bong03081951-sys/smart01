@@ -81,26 +81,14 @@ with st.sidebar:
     st.divider()
 
     st.markdown("### 📊 월별 수요 예측 (개)")
-    presets = {
-        "기본 시나리오": [1600, 3000, 3200, 3800, 2200, 2200],
-        "피크 수요":     [1600, 5000, 3200, 5800, 2200, 2200],
-        "변동 수요":     [1600, 5000, 3200, 5800, 2200, 6500],
-        "직접 입력":     None,
-    }
-    scenario = st.selectbox("시나리오 프리셋", list(presets.keys()))
     months = ["1월","2월","3월","4월","5월","6월"]
-
-    if scenario != "직접 입력":
-        for i, v in enumerate(presets[scenario]):
-            st.session_state[f"d{i}"] = v
-
+    defaults = [1600, 3000, 3200, 3800, 2200, 2200]
     demand = []
     c1, c2 = st.columns(2)
     for i, mo in enumerate(months):
         with (c1 if i % 2 == 0 else c2):
-            default = presets.get(scenario) or [1600,3000,3200,3800,2200,2200]
             if f"d{i}" not in st.session_state:
-                st.session_state[f"d{i}"] = default[i]
+                st.session_state[f"d{i}"] = defaults[i]
             demand.append(st.number_input(mo, min_value=0, step=100, key=f"d{i}"))
 
     st.divider()
@@ -214,19 +202,7 @@ with tab1:
                            plot_bgcolor="white", legend=dict(orientation="h", y=-0.25))
         st.plotly_chart(fig3, use_container_width=True)
 
-        # 재고 상태 요약
-        inv_status = []
-        for i, row in df.iterrows():
-            if row["부재고(개)"] > 0:
-                inv_status.append(f"🚨 {months[i]}: 부재고 {row['부재고(개)']:.0f}개 발생")
-            elif row["재고(개)"] < safe_stock:
-                inv_status.append(f"🟡 {months[i]}: 재고 {row['재고(개)']:.0f}개 — 안전재고 미달")
-            elif row["재고(개)"] > I0:
-                inv_status.append(f"🔵 {months[i]}: 재고 {row['재고(개)']:.0f}개 — 과잉재고")
-            else:
-                inv_status.append(f"🟢 {months[i]}: 재고 {row['재고(개)']:.0f}개 — 양호")
-        for s in inv_status:
-            st.caption(s)
+
 
     with col4:
         cost_vals = [sum(cb[f"{t+1}월"][k] for t in range(6)) for k in cost_keys]
@@ -287,19 +263,19 @@ with tab1:
                         plot_bgcolor="white", showlegend=False)
     st.plotly_chart(fig_p, use_container_width=True)
 
+
+
+with tab2:
+    st.markdown("### 📋 월별 결정변수 결과표")
+    st.dataframe(df, use_container_width=True, hide_index=True)
     st.markdown("---")
     st.markdown("### 💬 월별 계획 요약 코멘트")
-
-    # 3. 월별 한 줄 코멘트
-    reg_prod_pw = hours * days / std_time
+    reg_prod_pw2 = hours * days / std_time
     for i, row in df.iterrows():
         mo = months[i]
         issues = []
-        mp = reg_prod_pw * row["인원(명)"] + row["초과시간(h)"] / std_time
-        util = row["생산(개)"] / mp * 100 if mp > 0 else 0
-        total_supply = row["생산(개)"] + row["하청(개)"]
-        fulfill = min(total_supply / demand[i] * 100, 100) if demand[i] > 0 else 100
-
+        mp2 = reg_prod_pw2 * row["인원(명)"] + row["초과시간(h)"] / std_time
+        util2 = row["생산(개)"] / mp2 * 100 if mp2 > 0 else 0
         if row["부재고(개)"] > 0:
             issues.append(f"부재고 {row['부재고(개)']:.0f}개 발생 → 하청 확대 또는 사전 재고 확보 필요")
         if row["재고(개)"] < I0 * 0.2:
@@ -310,22 +286,16 @@ with tab1:
             issues.append(f"{row['고용(명)']:.0f}명 신규 고용 → 교육훈련 필요")
         if row["해고(명)"] > 0:
             issues.append(f"{row['해고(명)']:.0f}명 해고 → 해고비용 발생")
-        if util > 95:
-            issues.append(f"가동률 {util:.0f}% — 설비 과부하 위험")
-
+        if util2 > 95:
+            issues.append(f"가동률 {util2:.0f}% — 설비 과부하 위험")
         if not issues:
-            comment = "✅ 생산, 재고, 인력 모두 안정적인 달입니다."
-            st.success(f"**{mo}**: {comment}")
+            st.success(f"**{mo}**: 생산, 재고, 인력 모두 안정적인 달입니다.")
         else:
             comment = " / ".join(issues)
             if row["부재고(개)"] > 0:
                 st.error(f"**{mo}**: {comment}")
             else:
                 st.warning(f"**{mo}**: {comment}")
-
-with tab2:
-    st.markdown("### 📋 월별 결정변수 결과표")
-    st.dataframe(df, use_container_width=True, hide_index=True)
     st.markdown("---")
 
     cost_data = {k: [cb[f"{t+1}월"][k]/1000 for t in range(6)] for k in cost_keys}
